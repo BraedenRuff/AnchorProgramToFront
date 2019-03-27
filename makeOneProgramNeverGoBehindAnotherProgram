@@ -1,0 +1,185 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System;
+using System.Text;
+using System.Collections;
+using System.Runtime.InteropServices;
+using System.Diagnostics;
+using System.Threading;
+using System.Windows;
+
+
+namespace AnchorProgramToFront
+{
+
+    public partial class Form1 : Form
+    {
+
+        private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+        private static readonly IntPtr HWND_TOP = new IntPtr(-2);
+        private const UInt32 SWP_NOSIZE = 0x0001;
+        private const UInt32 SWP_NOMOVE = 0x0002;
+        private const UInt32 TOPMOST_FLAGS = SWP_NOMOVE | SWP_NOSIZE;
+        private bool mouseDown = false;
+        private Point mouseOffset;
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+        [DllImport("user32.dll")]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
+        
+
+        List<DesktopWindow> windows;
+        DesktopWindow anchoredWindow;
+
+        private class StateObjClass
+        {
+            // Used to hold parameters for calls to TimerTask.  
+
+            public System.Threading.Timer TimerReference;
+            public bool TimerCanceled;
+        }
+
+        public void RunTimer()
+        {
+            StateObjClass StateObj = new StateObjClass();
+            StateObj.TimerCanceled = false;
+
+            System.Threading.TimerCallback TimerDelegate =
+                new System.Threading.TimerCallback(TimerTask);
+
+            // Create a timer that calls a procedure every 2 seconds.  
+            // Note: There is no Start method; the timer starts running as soon as   
+            // the instance is created.  
+            System.Threading.Timer TimerItem =
+                new System.Threading.Timer(TimerDelegate, StateObj, 200, 200);
+
+            // Save a reference for Dispose.  
+            StateObj.TimerReference = TimerItem;
+
+        }
+
+        private void TimerTask(object StateObj)
+        {
+            if (anchoredWindow != null)
+                SetWindowPos(anchoredWindow.Handle, HWND_TOPMOST, 0, 0, 0, 0, TOPMOST_FLAGS);
+        }
+        public Form1()
+        {
+            InitializeComponent();
+            windows = User32Helper.GetDesktopWindows();
+            foreach (DesktopWindow window in windows)
+            {
+                if (window.Title != "")
+                {
+                    listBox1.Items.Add(window.Title);
+                }
+            }
+        }
+        [DllImport("User32.dll")]
+        public static extern Int32 SetForegroundWindow(int hWnd);
+        
+        private void listBox1_DoubleClick(object sender, EventArgs e)
+        {
+            if (anchoredWindow != null)
+                SetWindowPos(anchoredWindow.Handle, HWND_TOP, 0, 0, 0, 0, TOPMOST_FLAGS);
+            anchoredWindow = windows[listBox1.SelectedIndex];
+            SetForegroundWindow(anchoredWindow.Handle);
+            SetWindowPos(anchoredWindow.Handle, HWND_TOPMOST, 0, 0, 0, 0, TOPMOST_FLAGS);
+
+        }
+
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            if (anchoredWindow != null)
+                SetWindowPos(anchoredWindow.Handle, HWND_TOP, 0, 0, 0, 0, TOPMOST_FLAGS);
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            Application.Exit();
+        }
+
+        private void panel1_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (mouseDown)
+            {
+                
+                DesktopLocation = new Point(Cursor.Position.X + mouseOffset.X, Cursor.Position.Y + mouseOffset.Y);
+            }
+        }
+
+        private void panel1_MouseDown(object sender, MouseEventArgs e)
+        {
+            mouseDown = true;
+            mouseOffset = new Point(DesktopLocation.X - Cursor.Position.X, DesktopLocation.Y - Cursor.Position.Y);
+            
+        }
+
+        private void panel1_MouseUp(object sender, MouseEventArgs e)
+        {
+            mouseDown = false;
+        }
+
+        private void timer1_Tick(object sender, EventArgs e)
+        {
+            label2.Text = "x: " + Cursor.Position.X + " y: " + Cursor.Position.Y;
+        }
+    }
+
+    public class DesktopWindow
+    {
+        public IntPtr Handle { get; set; }
+        public string Title { get; set; }
+        public bool IsVisible { get; set; }
+    }
+
+    public class User32Helper
+    {
+        public delegate bool EnumDelegate(IntPtr hWnd, int lParam);
+
+        public bool TopMost { get; set; }
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowText",
+            ExactSpelling = false, CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpWindowText, int nMaxCount);
+
+        [DllImport("user32.dll", EntryPoint = "EnumDesktopWindows",
+            ExactSpelling = false, CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern bool EnumDesktopWindows(IntPtr hDesktop, EnumDelegate lpEnumCallbackFunction,
+            IntPtr lParam);
+
+        public static List<DesktopWindow> GetDesktopWindows()
+        {
+            var collection = new List<DesktopWindow>();
+            EnumDelegate filter = delegate (IntPtr hWnd, int lParam)
+            {
+                var result = new StringBuilder(255);
+                GetWindowText(hWnd, result, result.Capacity + 1);
+                string title = result.ToString();
+
+                var isVisible = !string.IsNullOrEmpty(title) && IsWindowVisible(hWnd);
+
+                if (isVisible)
+                {
+                    collection.Add(new DesktopWindow { Handle = hWnd, Title = title, IsVisible = isVisible });
+                }
+                return true;
+            };
+
+            EnumDesktopWindows(IntPtr.Zero, filter, IntPtr.Zero);
+            return collection;
+        }
+    }
+    
+}
